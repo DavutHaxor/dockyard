@@ -5,12 +5,15 @@ client on your Linux desktop.
 
 - **Daemon** (`daemon/`): talks to the Docker Engine API, reads host metrics
   from `/proc`, and exposes REST + WebSocket with token auth.
-- **Client** (`app/`): Flutter desktop app (login, container list, live
-  metrics). The shell and project structure exist; screens are next.
+- **Client** (`app/`): Flutter desktop app with live metrics, container
+  controls, and a Settings tab for the server URL and admin token. There is no
+  login screen; the daemon session is established in the background.
 - **Contract** (`api/`): OpenAPI spec and WebSocket protocol shared by both.
 
-> Status: the daemon is functional and tested. The Flutter app is still the
-> generated shell, wired into the repository layout.
+> Status: the daemon is functional and tested. The Linux Flutter client is
+> implemented: left navigation rail, overview, containers, metrics, settings,
+> live WebSocket updates, and container actions. Packaging and OS keyring
+> storage are the main open client items.
 
 ## Quick start
 
@@ -50,6 +53,15 @@ fvm flutter run -d linux
 ```
 
 The SDK is pinned in `app/.fvmrc`. On a fresh machine run `fvm install` once.
+
+On first launch the Overview page asks for connection details. Open **Settings**
+in the left rail, enter the daemon URL (for example
+`http://192.168.1.10:8080`) and the admin token, then choose **Test connection**
+or **Save settings**. The app keeps the session and live connection running in
+the background; it never shows a login screen.
+
+The admin token is stored in the desktop app's local preferences. Use a
+dedicated strong token and keep the daemon on a trusted network or behind TLS.
 
 ### Docker Compose
 
@@ -130,7 +142,7 @@ go test -race ./...
 
 ## Roadmap
 
-1. Flutter login, container list, and live metrics screens.
-2. API client generated from `api/openapi.yaml`.
+1. OS keyring storage for the admin token (`flutter_secure_storage` or libsecret).
+2. API client generated from `api/openapi.yaml` instead of hand-written models.
 3. TLS reverse proxy service in `deploy/compose.yaml`.
-4. Image publishing, release automation, license.
+4. Linux packaging (Flatpak/AppImage) and release automation; license.

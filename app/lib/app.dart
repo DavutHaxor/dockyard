@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'core/theme/app_theme.dart';
+import 'features/shell/presentation/app_shell.dart';
+
 /// Root widget of the Dockyard client.
 ///
-/// Routing, providers, and the authenticated shell are attached here as the
-/// features are implemented.
+/// There is no login route: connection details are stored locally and the
+/// daemon session is established in the background by the live controller.
 class DockyardApp extends StatelessWidget {
   const DockyardApp({super.key});
 
@@ -12,13 +15,10 @@ class DockyardApp extends StatelessWidget {
     return MaterialApp(
       title: 'Dockyard',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF0E7490)),
-        useMaterial3: true,
-      ),
-      home: const Scaffold(
-        body: Center(child: Text('Dockyard')),
-      ),
+      theme: AppTheme.light,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.system,
+      home: const AppShell(),
     );
   }
 }

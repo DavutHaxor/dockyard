@@ -13,15 +13,17 @@ Dockyard is one repository with two deployables and one shared contract:
 dockyard/
 ├── app/                          # Flutter client (Linux desktop first)
 │   ├── lib/
-│   │   ├── main.dart             # entry point
-│   │   ├── app.dart              # root widget, theme, router
+│   │   ├── main.dart             # entry point; loads SharedPreferences
+│   │   ├── app.dart              # root widget, Material 3 themes, shell
 │   │   ├── api/generated/        # generated from ../../api (do not edit)
 │   │   ├── core/                 # cross-cutting client infrastructure
-│   │   │   ├── config/           # server URL, build flavors
-│   │   │   ├── network/          # REST client, WebSocket client, auth
-│   │   │   ├── storage/          # token storage (OS keyring)
-│   │   │   └── theme/
-│   │   ├── features/             # feature-first: auth, containers, metrics, settings
+│   │   │   ├── config/           # settings model, validation, persistence
+│   │   │   ├── models/           # container and metric DTOs
+│   │   │   ├── network/          # REST client, JWT exchange, WS URI
+│   │   │   ├── state/            # live WebSocket controller, navigation
+│   │   │   ├── theme/            # light and dark Material 3 themes
+│   │   │   └── utils/            # byte/percent/time formatters
+│   │   ├── features/             # shell, overview, containers, metrics, settings
 │   │   └── shared/widgets/       # reusable widgets only
 │   ├── test/
 │   ├── integration_test/
@@ -72,9 +74,10 @@ dockyard/
   `app/lib/api/generated/`; Go DTOs live next to the handlers. Neither side is
   the source of truth, so neither drifts silently.
 - **Feature-first client, domain-first daemon.** Flutter features
-  (`containers`, `metrics`, ...) keep UI/data/state together. The Go daemon is
-  split by domain (`docker`, `metrics`, `auth`) with the HTTP layer on top,
-  instead of generic `handlers/`, `services/`, `models/` folders.
+  (`overview`, `containers`, `metrics`, `settings`, `shell`) keep UI and
+  feature state together. The Go daemon is split by domain (`docker`, `metrics`,
+  `auth`) with the HTTP layer on top, instead of generic `handlers/`,
+  `services/`, `models/` folders.
 - **Desktop now, other platforms later.** `app/linux/` is generated today;
   `fvm flutter create --platforms=web,android,ios,macos,windows .` adds the
   rest without moving any Dart code.
@@ -84,20 +87,36 @@ dockyard/
 ### Client (`app/`)
 
 ```
-features/*/presentation  ->  features/*/domain  ->  features/*/data
-          |                          |                    |
-          +----------> core/network + api/generated <-----+
+features/*/presentation  ->  core/state  ->  core/network  ->  api/generated
+          |                     |                |
+          +---------> shared/widgets            +--> core/config
 ```
 
-- `core/` contains infrastructure with no feature knowledge (HTTP, WS, config,
-  token storage, theme).
-- A feature owns its `data/`, `domain/`, and `presentation/` subfolders and may
-  depend on `core/` and `shared/`. Features must not import each other's
-  internals; cross-feature flows go through `app.dart` (routing/shell) or a
-  shared domain type.
+- `core/` contains infrastructure with no feature knowledge (HTTP, WebSocket,
+  settings, models, theme, formatters).
+- A feature owns its `presentation/` (and later `data/`/`domain/`) subfolder and
+  may depend on `core/` and `shared/`. Features must not import each other's
+  internals; cross-feature navigation goes through `core/state/navigation.dart`
+  and the shell.
 - `shared/` is presentation-only: widgets, formatters, extensions.
-- `lib/api/generated/` is machine output. Never hand-edit it; regenerate from
-  `api/`.
+- `lib/api/generated/` is reserved for machine output. Never hand-edit it;
+  regenerate from `api/`. Models are hand-written until codegen lands.
+
+### Client UI architecture
+
+- The shell is a Material 3 `Scaffold` with a permanent left `NavigationRail`
+  (Overview, Containers, Metrics, Settings). It expands labels when the window
+  is at least 1080 px wide and shows icon labels otherwise.
+- There is intentionally no login route. `SettingsController` persists the
+  server URL and admin token with `shared_preferences`; the API client trades
+  the token for a short-lived JWT and retries once after a `401`.
+- `liveControllerProvider` owns the WebSocket, reconnect backoff, the metric
+  window, and the container list. Any settings change rebuilds the API client
+  and live controller, so saving Settings reconnects automatically.
+- Pages read `LiveState` through Riverpod and issue actions through the same
+  controller; the daemon pushes the resulting container state back.
+- Hidden sections stay alive with `Offstage`/`TickerMode` so search text and
+  form state survive tab switches without animating in the background.
 
 ### Daemon (`daemon/`)
 
@@ -173,6 +192,7 @@ is pinned to. The root `Makefile` wraps these commands, and CI uses the same
 | New container action | `daemon/internal/docker` + handler, event through `ws` |
 | New metric | `daemon/internal/metrics` collector + `store` + WS broadcast |
 | New screen or panel | `app/lib/features/<feature>/presentation/` |
-| Shared token/config handling | `daemon/internal/config` + `app/lib/core/` |
+| New shared UI widget | `app/lib/shared/widgets/` |
+| Shared token/config handling | `daemon/internal/config` + `app/lib/core/config/` |
 | Deployment or reverse proxy | `deploy/` |
 | Design decision worth remembering | `docs/adr/NNNN-title.md` |
