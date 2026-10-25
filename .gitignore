@@ -12,6 +12,8 @@ build/
 /bin/
 /dist/
 *.test
+*.coverprofile
+coverage.out
 /daemon/dockyardd
 
 # Editors and OS

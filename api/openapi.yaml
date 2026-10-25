@@ -1,0 +1,456 @@
+openapi: 3.1.0
+info:
+  title: Dockyard API
+  version: 0.1.0
+  description: |
+    REST API of the Dockyard daemon. The daemon is the only component with
+    access to the Docker Engine and host metrics.
+
+    Authenticate by exchanging the admin token for a short-lived JWT at
+    `POST /api/v1/auth/login`, then send it as
+    `Authorization: Bearer <jwt>`. Live metrics and container changes are
+    pushed over the WebSocket endpoint documented in `websocket.md`.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Default local address
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Containers
+  - name: Metrics
+  - name: System
+
+paths:
+  /healthz:
+    get:
+      tags: [System]
+      summary: Liveness probe
+      description: Always unauthenticated so container orchestrators can probe it.
+      security: []
+      responses:
+        '200':
+          description: The daemon process is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Exchange the admin token for a session JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: The admin token is wrong.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/containers:
+    get:
+      tags: [Containers]
+      summary: List all containers, running or stopped
+      responses:
+        '200':
+          description: Container list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContainerList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/DockerUnavailable'
+        '504':
+          $ref: '#/components/responses/DockerTimeout'
+
+  /api/v1/containers/{id}/start:
+    post:
+      tags: [Containers]
+      summary: Start a container
+      parameters:
+        - $ref: '#/components/parameters/ContainerID'
+      responses:
+        '200':
+          $ref: '#/components/responses/OK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ContainerNotFound'
+        '502':
+          $ref: '#/components/responses/DockerUnavailable'
+        '504':
+          $ref: '#/components/responses/DockerTimeout'
+
+  /api/v1/containers/{id}/stop:
+    post:
+      tags: [Containers]
+      summary: Stop a container
+      parameters:
+        - $ref: '#/components/parameters/ContainerID'
+      responses:
+        '200':
+          $ref: '#/components/responses/OK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ContainerNotFound'
+        '502':
+          $ref: '#/components/responses/DockerUnavailable'
+        '504':
+          $ref: '#/components/responses/DockerTimeout'
+
+  /api/v1/containers/{id}/restart:
+    post:
+      tags: [Containers]
+      summary: Restart a container
+      parameters:
+        - $ref: '#/components/parameters/ContainerID'
+      responses:
+        '200':
+          $ref: '#/components/responses/OK'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ContainerNotFound'
+        '502':
+          $ref: '#/components/responses/DockerUnavailable'
+        '504':
+          $ref: '#/components/responses/DockerTimeout'
+
+  /api/v1/metrics:
+    get:
+      tags: [Metrics]
+      summary: Get the latest metric sample
+      responses:
+        '200':
+          description: Latest sample.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSample'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/MetricsUnavailable'
+
+  /api/v1/metrics/history:
+    get:
+      tags: [Metrics]
+      summary: Get the in-memory metric window
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Number of samples to return. 0 returns the whole window.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000
+            default: 0
+      responses:
+        '200':
+          description: Samples in chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsHistory'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/ws:
+    get:
+      tags: [Metrics]
+      summary: Live updates over WebSocket
+      description: |
+        Upgrades to a WebSocket and immediately sends a `snapshot` event,
+        then `metrics` on every sample and `containers` whenever the container
+        list changes. See `websocket.md` for the message format.
+
+        Desktop clients can send the usual Authorization header. Browser
+        clients, which cannot set headers during the upgrade, may pass the
+        session as `?token=`.
+      security:
+        - bearerAuth: []
+        - sessionQuery: []
+      responses:
+        '101':
+          description: Switching to WebSocket.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    sessionQuery:
+      type: apiKey
+      in: query
+      name: token
+      description: Session JWT for browser WebSocket clients.
+
+  parameters:
+    ContainerID:
+      name: id
+      in: path
+      required: true
+      description: Full container ID, short ID, or name.
+      schema:
+        type: string
+        pattern: '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$'
+
+  responses:
+    OK:
+      description: Action completed.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status:
+                type: string
+                const: ok
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing, invalid, or expired session.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ContainerNotFound:
+      description: Docker has no container with that ID or name.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DockerUnavailable:
+      description: The Docker Engine could not be reached or returned an error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DockerTimeout:
+      description: The Docker Engine did not answer before the request deadline.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    MetricsUnavailable:
+      description: No metric sample has been collected yet.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: The long-lived admin token configured on the server.
+
+    LoginResponse:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token:
+          type: string
+          description: Signed JWT for the Authorization header.
+        expires_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              examples:
+                - unauthorized
+                - container_not_found
+                - docker_unavailable
+            message:
+              type: string
+
+    ContainerList:
+      type: object
+      required: [containers]
+      properties:
+        containers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Container'
+
+    Container:
+      type: object
+      required: [id, name, image, state, status, created, ports]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: Container name without Docker's leading slash.
+        image:
+          type: string
+        state:
+          type: string
+          examples: [running, exited, paused]
+        status:
+          type: string
+          examples: ["Up 2 hours", "Exited (0) 3 hours ago"]
+        created:
+          type: integer
+          format: int64
+          description: Unix timestamp.
+        ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Port'
+
+    Port:
+      type: object
+      required: [private_port, type]
+      properties:
+        ip:
+          type: string
+        private_port:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        public_port:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        type:
+          type: string
+          examples: [tcp, udp]
+
+    MetricsHistory:
+      type: object
+      required: [samples]
+      properties:
+        samples:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricsSample'
+
+    MetricsSample:
+      type: object
+      required:
+        - timestamp
+        - cpu_percent
+        - cpu_count
+        - load_1
+        - load_5
+        - load_15
+        - uptime_seconds
+        - memory
+        - disk
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        cpu_percent:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: Average host CPU usage since the previous sample.
+        cpu_count:
+          type: integer
+        load_1:
+          type: number
+        load_5:
+          type: number
+        load_15:
+          type: number
+        uptime_seconds:
+          type: number
+        memory:
+          $ref: '#/components/schemas/Memory'
+        disk:
+          $ref: '#/components/schemas/Disk'
+
+    Memory:
+      type: object
+      required: [total_bytes, used_bytes, available_bytes, percent]
+      properties:
+        total_bytes:
+          type: integer
+          format: int64
+        used_bytes:
+          type: integer
+          format: int64
+        available_bytes:
+          type: integer
+          format: int64
+        percent:
+          type: number
+          minimum: 0
+          maximum: 100
+
+    Disk:
+      type: object
+      required: [path, total_bytes, used_bytes, free_bytes, percent]
+      properties:
+        path:
+          type: string
+          description: Filesystem reported by the daemon.
+        total_bytes:
+          type: integer
+          format: int64
+        used_bytes:
+          type: integer
+          format: int64
+        free_bytes:
+          type: integer
+          format: int64
+        percent:
+          type: number
+          minimum: 0
+          maximum: 100

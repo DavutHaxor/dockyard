@@ -2,7 +2,7 @@
 FLUTTER := fvm flutter
 
 .PHONY: app-get app-run app-test app-analyze app-build app-clean \
-        daemon-run daemon-test daemon-build
+        daemon-run daemon-test daemon-build daemon-fmt daemon-check
 
 app-get:
 	cd app && $(FLUTTER) pub get
@@ -22,7 +22,6 @@ app-build:
 app-clean:
 	cd app && $(FLUTTER) clean
 
-# Requires `go mod init` in daemon/ first.
 daemon-run:
 	cd daemon && go run ./cmd/dockyardd
 
@@ -32,3 +31,9 @@ daemon-test:
 daemon-build:
 	mkdir -p bin
 	cd daemon && go build -o ../bin/dockyardd ./cmd/dockyardd
+
+daemon-fmt:
+	cd daemon && gofmt -w .
+
+daemon-check:
+	cd daemon && test -z "$$(gofmt -l .)" && go vet ./... && go test -race ./...

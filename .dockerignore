@@ -1,0 +1,9 @@
+.git
+.github
+app
+docs
+scripts
+deploy
+*.md
+.env
+.env.*

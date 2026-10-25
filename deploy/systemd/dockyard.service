@@ -1,0 +1,33 @@
+[Unit]
+Description=Dockyard homelab daemon
+Documentation=https://github.com/DavutHaxor/dockyard
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Create once:
+#   sudo useradd --system --no-create-home --shell /usr/sbin/nologin dockyard
+#   sudo usermod -aG docker dockyard
+User=dockyard
+Group=docker
+EnvironmentFile=/etc/dockyard/dockyard.env
+ExecStart=/usr/local/bin/dockyardd
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+
+# Hardening. The process only reads /proc and talks to the Docker socket.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

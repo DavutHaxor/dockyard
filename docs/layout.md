@@ -30,20 +30,30 @@ dockyard/
 │   ├── .fvmrc                    # pinned Flutter SDK (FVM)
 │   └── pubspec.yaml
 ├── daemon/                       # Go daemon ("dockyardd")
-│   ├── cmd/dockyardd/            # main() only: wire config, server, signal handling
-│   └── internal/                 # not importable outside this module
-│       ├── api/                  # HTTP router, handlers, middleware
-│       ├── auth/                 # admin token check, JWT issue/verify
-│       ├── config/               # environment/config parsing
-│       ├── docker/               # Docker Engine API wrapper
-│       ├── metrics/              # /proc and /sys collectors
-│       ├── store/                # in-memory short-history ring buffer
-│       └── ws/                   # WebSocket hub, subscriptions, broadcast
+│   ├── cmd/dockyardd/
+│   │   └── main.go               # config, wiring, background loops, shutdown
+│   ├── internal/                 # not importable outside this module
+│   │   ├── api/                  # router, handlers, auth middleware
+│   │   ├── auth/                 # admin token check, JWT issue/verify
+│   │   ├── config/               # environment parsing and validation
+│   │   ├── docker/               # Docker Engine HTTP client + Engine interface
+│   │   ├── metrics/              # /proc parser and statfs disk usage
+│   │   ├── store/                # in-memory short-history ring buffer
+│   │   └── ws/                   # WebSocket hub, per-client pumps, broadcast
+│   ├── go.mod
+│   └── go.sum
 ├── api/                          # language-neutral API contract
-├── deploy/                       # compose file, Dockerfile, systemd unit, proxy config
-├── docs/                         # architecture notes, development guide, ADRs
+│   ├── openapi.yaml              # REST endpoints and schemas
+│   └── websocket.md              # event envelope and client behavior
+├── deploy/
+│   ├── compose.yaml              # recommended self-hosting setup
+│   ├── daemon.Dockerfile         # distroless, nonroot image
+│   ├── .env.example
+│   └── systemd/dockyard.service  # native install alternative
+├── docs/                         # architecture notes and ADRs
 ├── scripts/                      # development and release helpers
-├── .github/workflows/            # CI (lint, test, build, image publish)
+├── .github/workflows/ci.yml      # format, vet, test, build, image
+├── .dockerignore
 ├── Makefile                      # common commands (Flutter always via FVM)
 ├── README.md
 └── .gitignore
@@ -100,6 +110,22 @@ features/*/presentation  ->  features/*/domain  ->  features/*/data
   promote a package only when a second consumer exists.
 - No database. `store/` keeps the current snapshot plus a short in-memory
   history, matching the project scope.
+- The Docker client is a small HTTP client over the Unix socket, not the official
+  SDK. Dockyard only needs list/start/stop/restart, and this keeps the
+  dependency surface tiny; the `docker.Engine` interface contains the choice.
+
+## Testing without Docker
+
+Neither building nor testing the daemon requires a Docker daemon:
+
+- `internal/docker` tests run against `httptest` and a temporary Unix socket.
+- `internal/api` tests use a fake `docker.Engine`, including a real WebSocket
+  connection.
+- `internal/metrics` tests parse fixture files in a temp directory.
+- CI validates `deploy/compose.yaml` with `docker compose config` and builds the
+  image, but never runs the daemon against a live Docker Engine.
+
+Only when you actually run `dockyardd` does it need `/var/run/docker.sock`.
 
 ## Runtime view
 
@@ -111,7 +137,7 @@ features/*/presentation  ->  features/*/domain  ->  features/*/data
                                                         │
                                           ┌─────────────┴─────────────┐
                                           │                           │
-                                  /var/run/docker.sock          /proc, /sys
+                                  /var/run/docker.sock          /proc + statfs
                                   (container list/control)      (CPU, RAM, disk)
 ```
 
