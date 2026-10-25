@@ -1,0 +1,24 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Flutter / Dart (app/.gitignore has the generated full list)
+.fvm/
+.dart_tool/
+build/
+
+# Go
+/bin/
+/dist/
+*.test
+/daemon/dockyardd
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Logs
+*.log
